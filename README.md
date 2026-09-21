@@ -89,7 +89,14 @@ HIP (HACCP Investment Priority)
     ├── 4변수 HIP 산출 + 베타-이항 축소 (score.py)
     └── 이중 민감도 분석 (변수 가중치 + 등급 가중치)
 
-[4단계] 시각화 및 정책 제언 ⏳
+[4단계] 시각화 (visualize.py) ✅
+    ├── fig0 EDA (변수 분포 + 변환 근거)
+    ├── fig1~3 순위·구성·민감도 (결론·근거·신뢰도)
+    ├── fig4 위험-규모 매트릭스 (0.5/중앙값 병치)
+    ├── fig5 예산 배분 시뮬레이션
+    └── fig6 베타-이항 보정 효과
+
+[5단계] 정책 제언 및 발표자료 ⏳
 ```
 
 ## 프로젝트 구조
@@ -103,7 +110,8 @@ haccp-investment-priority/
 │   ├── collect_haccp_api.py     # 1단계: API 수집 + 품목유형 집계
 │   ├── merge_csv.py             # 2단계: CSV 조인
 │   ├── map_recall.py            # 3단계: 회수 → 등급가중 Impact
-│   └── score.py                 # 3단계: 4변수 HIP 스코어링
+│   ├── score.py                 # 3단계: 4변수 HIP 스코어링
+│   └── visualize.py             # 4단계: 시각화 7종
 └── data/
     ├── raw/                     # 원본 데이터
     │   ├── 1-1-1-2.csv 등 식약처 통계
@@ -111,9 +119,10 @@ haccp-investment-priority/
     │   ├── haccp_companies_raw.csv   # 인증업체 원본 (41,091건)
     │   ├── haccp_by_category.csv     # 품목유형별 집계 (23개)
     │   └── product_codes.csv         # 품목코드 매핑 테이블
-    └── processed/
-        ├── merged.csv           # 통합 테이블
-        └── scores.csv           # 최종 HIP 순위
+    ├── processed/
+    │   ├── merged.csv           # 통합 테이블
+    │   └── scores.csv           # 최종 HIP 순위
+    └── figures/                 # 시각화 결과 (fig0~fig6 png)
 ```
 
 ## 실행 방법
@@ -130,6 +139,9 @@ python src/merge_csv.py
 # 3단계: 회수 Impact 병합 → 스코어링
 python src/map_recall.py
 python src/score.py
+
+# 4단계: 시각화 (코랩에서 한글 폰트 설정 후 실행)
+python src/visualize.py
 ```
 
 식약처 CSV(1-1-1-2 등)와 I0490.csv는 `data/raw/`에 미리 위치시켜야 한다.
