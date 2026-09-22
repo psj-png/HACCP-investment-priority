@@ -22,14 +22,17 @@ HIP (HACCP Investment Priority)
 | **Risk** | 안전 위험도 | 부적합률 (베타-이항 축소 보정) | 식약처 1-4-3 수거검사 |
 | **Scale** | 경제적 규모 | 생산액 (log10 변환) | 식약처 1-2-1-2 생산실적 |
 | **Vulnerability** | HACCP 취약도 | 1 − (HACCP 인증 업체 수 / 전체 업체 수) | 인증원 API + 식약처 1-1-1-2 |
-| **Impact** | 사고 피해 규모 | 등급가중 회수 건수 (log 변환) | 식약처 I0490 회수·판매중지 |
+| **Impact** | 사고 피해 규모 | 등급별 회수 건수 (가중치는 몬테카를로) | 식약처 I0490 회수·판매중지 |
 
-모든 변수는 0~1로 정규화(변수 특성에 맞춰 min-max/log 차등 적용) 후 합산하며, 가중치는 동일가중을 기본으로 **이중 민감도 분석**(변수 가중치 + 회수등급 가중치)으로 강건성을 검증한다.
+모든 변수는 0~1로 정규화(변수 특성에 맞춰 min-max/log 차등 적용) 후 합산한다. 가중치의 자의성을 배제하기 위해 **몬테카를로 민감도 분석**을 적용: 변수 가중치(R/S/V/I)는 완전 무작위, 회수등급 가중치(1/2/3)는 순서 제약(1≥2≥3, 식약처 등급 정의)만 두고 10,000회 추출해 순위 분포를 산출한다. 특정 가중치 값을 지정하지 않으므로 "왜 이 값인가"라는 반박이 성립하지 않는다.
 
 ## 주요 결과
 
-**최우선 투자 대상 (어떤 가중치에도 상위 유지):**
-- 1위 빙과류 (부적합률 최고), 2위 기타식품류 (회수 최다), 3위 음료류 (규모·회수·취약 종합)
+**최우선 투자 대상 (몬테카를로 top5 유지율):**
+- 기타식품류 95.6%, 음료류 93.4%, 조미식품 70.4%, 빙과류 65.8%, 식육가공품 57.1% — 가중치와 무관하게 상위권 유지 (강건)
+
+**관점 의존적:**
+- 장류(top5 23.6%): 취약도 강조 시 급상승 / 유가공품류(30.6%): 부적합률 높으나 회수 0
 
 **관점별 판단 필요:**
 - 유가공품류: 부적합률 높으나 실제 회수 0 → 예방적 투자 대상
@@ -85,9 +88,9 @@ HIP (HACCP Investment Priority)
     └── data/processed/merged.csv (23개 품목유형 × 지표)
 
 [3단계] 스코어링 ✅
-    ├── 회수 데이터 → 등급가중 Impact 4버전 (map_recall.py)
-    ├── 4변수 HIP 산출 + 베타-이항 축소 (score.py)
-    └── 이중 민감도 분석 (변수 가중치 + 등급 가중치)
+    ├── 회수 데이터 → 품목유형별 등급별 건수 (map_recall.py)
+    ├── 몬테카를로 민감도 — 가중치 무작위 1만 회 → 순위 분포 (montecarlo.py)
+    └── 4변수 HIP + 베타-이항 축소, 몬테카를로 중앙순위 정본 (score.py)
 
 [4단계] 시각화 (visualize.py) ✅
     ├── fig0 EDA (변수 분포 + 변환 근거)
@@ -109,9 +112,10 @@ haccp-investment-priority/
 ├── src/
 │   ├── collect_haccp_api.py     # 1단계: API 수집 + 품목유형 집계
 │   ├── merge_csv.py             # 2단계: CSV 조인
-│   ├── map_recall.py            # 3단계: 회수 → 등급가중 Impact
-│   ├── score.py                 # 3단계: 4변수 HIP 스코어링
-│   └── visualize.py             # 4단계: 시각화 7종
+│   ├── map_recall.py            # 3단계: 회수 → 품목유형별 등급별 건수
+│   ├── montecarlo.py            # 3단계: 몬테카를로 민감도 (1만 회)
+│   ├── score.py                 # 3단계: 4변수 HIP + 몬테카를로 정본
+│   └── visualize.py             # 4단계: 시각화
 └── data/
     ├── raw/                     # 원본 데이터
     │   ├── 1-1-1-2.csv 등 식약처 통계
@@ -120,8 +124,9 @@ haccp-investment-priority/
     │   ├── haccp_by_category.csv     # 품목유형별 집계 (23개)
     │   └── product_codes.csv         # 품목코드 매핑 테이블
     ├── processed/
-    │   ├── merged.csv           # 통합 테이블
-    │   └── scores.csv           # 최종 HIP 순위
+    │   ├── merged.csv           # 통합 테이블 (Recall_1/2/3등급 포함)
+    │   ├── scores.csv           # 최종 순위 (몬테카를로 중앙순위 정본)
+    │   └── montecarlo_ranks.csv # 몬테카를로 순위 분포
     └── figures/                 # 시각화 결과 (fig0~fig6 png)
 ```
 
@@ -136,8 +141,9 @@ python src/collect_haccp_api.py
 # 2단계: CSV 조인
 python src/merge_csv.py
 
-# 3단계: 회수 Impact 병합 → 스코어링
+# 3단계: 회수 등급별 건수 → 몬테카를로 → 스코어링
 python src/map_recall.py
+python src/montecarlo.py
 python src/score.py
 
 # 4단계: 시각화 (코랩에서 한글 폰트 설정 후 실행)
