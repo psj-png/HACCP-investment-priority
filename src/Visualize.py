@@ -30,7 +30,6 @@ from matplotlib.lines import Line2D
 
 MERGED = "data/processed/merged.csv"
 SCORES = "data/processed/scores.csv"
-IMPACT_VERSIONS = ["Impact_321", "Impact_2_15_1", "Impact_531", "Impact_111"]
 
 
 def num(r, k):
@@ -78,7 +77,9 @@ def fig0_eda(rows):
     fail = [(num(r, "부적합건수") / num(r, "검사건수") * 100) if num(r, "검사건수") else None for r in rows]
     prod = [num(r, "생산액_천원") for r in rows]
     cert = [num(r, "HACCP_인증률") * 100 if num(r, "HACCP_인증률") is not None else None for r in rows]
-    recall = [num(r, "Impact_321") or 0 for r in rows]
+    # Impact 원본 = 등급별 건수 × 3:2:1 (EDA 표시용 예시 가중)
+    recall = [((num(r, "Recall_1등급") or 0)*3 + (num(r, "Recall_2등급") or 0)*2
+               + (num(r, "Recall_3등급") or 0)*1) for r in rows]
 
     fig, axes = plt.subplots(2, 3, figsize=(17, 9.5))
 
@@ -200,51 +201,14 @@ def fig2_composition(scores):
 # fig3: 민감도 히트맵
 # ═══════════════════════════════════════════════════
 def fig3_sensitivity(rows):
-    cats = [r["품목유형"] for r in rows]
-    shrunk, _, _, _ = beta_shrink(rows)
-
-    def variables(impact_col):
-        risk = [shrunk.get(c) for c in cats]
-        scale = [math.log10(num(r, "생산액_천원")) if num(r, "생산액_천원") else None for r in rows]
-        vuln = [(1 - num(r, "HACCP_인증률")) if num(r, "HACCP_인증률") is not None else None for r in rows]
-        impact = [math.log((num(r, impact_col) or 0) + 1) for r in rows]
-        fill = lambda xs: [x if x is not None else 0.0 for x in minmax(xs)]
-        return fill(risk), fill(scale), fill(vuln), fill(impact)
-
-    def rank_map(weights, impact_col="Impact_321"):
-        R, S, V, I = variables(impact_col)
-        wr, ws, wv, wi = weights
-        sc = [(cats[i], wr*R[i]+ws*S[i]+wv*V[i]+wi*I[i]) for i in range(len(cats))]
-        sc.sort(key=lambda x: -x[1])
-        return {c: i+1 for i, (c, _) in enumerate(sc)}
-
-    scenarios = {
-        "동일가중": rank_map((0.25,)*4), "Risk↑": rank_map((0.40, 0.20, 0.20, 0.20)),
-        "Scale↑": rank_map((0.20, 0.40, 0.20, 0.20)), "Vuln↑": rank_map((0.20, 0.20, 0.40, 0.20)),
-        "Impact↑": rank_map((0.20, 0.20, 0.20, 0.40)),
-        "등급5:3:1": rank_map((0.25,)*4, "Impact_531"), "등급1:1:1": rank_map((0.25,)*4, "Impact_111"),
-    }
-    base = scenarios["동일가중"]
-    ordered = sorted(base, key=lambda c: base[c])
-    matrix = np.array([[scenarios[s][c] for s in scenarios] for c in ordered])
-
-    fig, ax = plt.subplots(figsize=(9, 11))
-    im = ax.imshow(matrix, cmap='RdYlGn_r', aspect='auto', vmin=1, vmax=23)
-    ax.set_xticks(range(len(scenarios))); ax.set_xticklabels(scenarios.keys(), fontsize=10, rotation=30, ha='right')
-    ax.set_yticks(range(len(ordered))); ax.set_yticklabels(ordered, fontsize=9)
-    for i in range(len(ordered)):
-        for j in range(len(scenarios)):
-            v = matrix[i, j]
-            ax.text(j, i, int(v), ha='center', va='center', fontsize=8,
-                    color='white' if (v <= 5 or v >= 19) else 'black')
-    ax.set_title("가중치 민감도 분석 — 시나리오별 순위 변동", fontsize=13, fontweight='bold', pad=12)
-    plt.colorbar(im, ax=ax, shrink=0.5, label='순위 (1=최우선)')
-    plt.tight_layout(); plt.savefig("fig3_sensitivity.png", dpi=150, bbox_inches='tight'); plt.close()
-
-
-# ═══════════════════════════════════════════════════
-# fig4: 위험-규모 매트릭스 (0.5 / 중앙값 병치)
-# ═══════════════════════════════════════════════════
+    """
+    [DEPRECATED] 기존 7시나리오 민감도 히트맵.
+    몬테카를로(montecarlo.py + fig7 박스플롯)로 대체됨.
+    옛날 Impact_321 컬럼에 의존하므로 현재 merged.csv(Recall_1/2/3등급)에서는 미동작.
+    민감도 시각화는 fig7(순위 분포 박스플롯) 사용.
+    """
+    print("  [건너뜀] fig3는 몬테카를로(fig7)로 대체됨")
+    return
 def fig4_matrix(scores):
     try:
         from adjustText import adjust_text
@@ -409,7 +373,7 @@ def main():
     fig0_eda(merged)
     fig1_ranking(scores)
     fig2_composition(scores)
-    fig3_sensitivity(merged)
+    # fig3_sensitivity(merged)  # 몬테카를로(fig7)로 대체
     fig4_matrix(scores)
     fig5_budget(scores)
     fig6_shrinkage(merged)
