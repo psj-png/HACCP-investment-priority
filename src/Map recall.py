@@ -1,33 +1,24 @@
 """
-회수 데이터(I0490) → 품목유형별 Impact (4가지 등급가중 버전) → merged.csv 병합
+회수 데이터(I0490) → 품목유형별 등급별 건수 행렬 → merged.csv 병합
 ==============================================================
 입력: data/raw/I0490.csv, data/processed/merged.csv
-출력: data/processed/merged.csv (Impact 4버전 컬럼 추가)
+출력: data/processed/merged.csv (Recall_1등급, Recall_2등급, Recall_3등급 컬럼 추가)
 
-등급 가중치 민감도 검증용으로 여러 버전 생성:
-  Impact_321   : 1등급3, 2등급2, 3등급1 (기본)
-  Impact_2_15_1: 1등급2, 2등급1.5, 3등급1 (완만)
-  Impact_531   : 1등급5, 2등급3, 3등급1 (급격)
-  Impact_111   : 1등급1, 2등급1, 3등급1 (단순 건수)
+몬테카를로 민감도 분석용: 등급별 건수를 저장해두면
+Impact = 건수행렬 × 가중치벡터로 무작위 시뮬레이션 가능 (montecarlo.py).
 
-매핑: 회수 데이터의 품목명(PRDLST_CD_NM)을 23개 품목유형에 키워드 매핑.
-      회수 코드(PRDLST_CD)는 14자리로 우리 매핑 테이블과 체계가 달라 품목명 사용.
+자율회수·등급공백은 심각도 판정 불가로 제외 (1/2/3등급만).
+공백은 "경미"가 아니라 "판정 불가"이며(리스테리아 검출 등 심각 사례도 공백에 포함),
+3등급 취급 시 왜곡되므로 제외.
 """
 
 import csv
-import os
 import re
-from collections import Counter
 
 RECALL_PATH = "data/raw/I0490.csv"
 MERGED_PATH = "data/processed/merged.csv"
 
-GRADE_WEIGHT_VERSIONS = {
-    "Impact_321":    {"1등급": 3.0, "2등급": 2.0, "3등급": 1.0, "자율회수": 1.0, "": 1.0},
-    "Impact_2_15_1": {"1등급": 2.0, "2등급": 1.5, "3등급": 1.0, "자율회수": 1.0, "": 1.0},
-    "Impact_531":    {"1등급": 5.0, "2등급": 3.0, "3등급": 1.0, "자율회수": 1.0, "": 1.0},
-    "Impact_111":    {"1등급": 1.0, "2등급": 1.0, "3등급": 1.0, "자율회수": 1.0, "": 1.0},
-}
+GRADES = ["1등급", "2등급", "3등급"]   # 이 3개만 사용, 자율회수·공백 제외
 
 NAME_KEYWORD_MAP = [
     (["과자", "빵", "떡", "캔디", "추잉껌", "스낵", "비스킷", "한과"], "과자류, 빵류 또는 떡류"),
@@ -82,54 +73,66 @@ def main():
     with open(RECALL_PATH, encoding="utf-8-sig") as f:
         recalls = list(csv.DictReader(f))
 
-    impacts = {ver: {} for ver in GRADE_WEIGHT_VERSIONS}
-    raw_count = {}
-    unmapped = 0
+    # 품목유형별 등급별 건수 [1등급, 2등급, 3등급]
+    grade_counts = {}
+    unmapped, excluded_grade = 0, 0
 
     for r in recalls:
         name = r.get("PRDLST_CD_NM", "").strip()
         grade = r.get("RTRVL_GRDCD_NM", "").strip()
+
+        # 등급 명확한 것만 (자율회수·공백 제외)
+        if grade not in GRADES:
+            excluded_grade += 1
+            continue
+
         cat = map_to_category(name)
         if cat is None:
             unmapped += 1
             continue
-        raw_count[cat] = raw_count.get(cat, 0) + 1
-        for ver, weights in GRADE_WEIGHT_VERSIONS.items():
-            w = weights.get(grade, 1.0)
-            impacts[ver][cat] = impacts[ver].get(cat, 0.0) + w
 
-    print(f"회수 {len(recalls)}건 / 매핑 {len(recalls)-unmapped}건 / 제외 {unmapped}건\n")
+        gi = GRADES.index(grade)
+        grade_counts.setdefault(cat, [0, 0, 0])[gi] += 1
 
-    print(f"{'품목유형':<22}{'건수':>5}{'3:2:1':>8}{'2:1.5:1':>9}{'5:3:1':>8}{'1:1:1':>8}")
-    print("-" * 62)
-    all_cats = sorted(raw_count, key=lambda c: -impacts["Impact_321"].get(c, 0))
-    for cat in all_cats:
-        row = f"{cat:<22}{raw_count[cat]:>5}"
-        for ver in ["Impact_321", "Impact_2_15_1", "Impact_531", "Impact_111"]:
-            v = impacts[ver].get(cat, 0)
-            row += f"{v:>9.1f}" if ver == "Impact_2_15_1" else f"{v:>8.1f}"
-        print(row)
+    total_mapped = sum(sum(v) for v in grade_counts.values())
+    print(f"회수 {len(recalls)}건")
+    print(f"  등급 제외(자율회수·공백): {excluded_grade}건")
+    print(f"  품목유형 매핑 실패: {unmapped}건")
+    print(f"  최종 반영: {total_mapped}건\n")
 
-    # merged.csv에 4개 컬럼 추가
+    print(f"{'품목유형':<22}{'1등급':>6}{'2등급':>6}{'3등급':>6}{'계':>5}")
+    print("-" * 47)
+    for cat in sorted(grade_counts, key=lambda c: -sum(grade_counts[c])):
+        c1, c2, c3 = grade_counts[cat]
+        print(f"{cat:<22}{c1:>6}{c2:>6}{c3:>6}{c1+c2+c3:>5}")
+
+    # merged.csv에 3개 컬럼 추가
     with open(MERGED_PATH, encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
         fieldnames = list(rows[0].keys())
 
-    for ver in GRADE_WEIGHT_VERSIONS:
-        if ver not in fieldnames:
-            fieldnames.append(ver)
+    # 기존 Impact 버전 컬럼 제거 (있으면) + 등급별 컬럼 추가
+    old_cols = ["Impact_321", "Impact_2_15_1", "Impact_531", "Impact_111", "Impact_등급가중회수"]
+    fieldnames = [f for f in fieldnames if f not in old_cols]
+    for col in ["Recall_1등급", "Recall_2등급", "Recall_3등급"]:
+        if col not in fieldnames:
+            fieldnames.append(col)
 
     for r in rows:
         cat = r["품목유형"]
-        for ver in GRADE_WEIGHT_VERSIONS:
-            r[ver] = impacts[ver].get(cat, 0.0)
+        counts = grade_counts.get(cat, [0, 0, 0])
+        r["Recall_1등급"] = counts[0]
+        r["Recall_2등급"] = counts[1]
+        r["Recall_3등급"] = counts[2]
+        for c in old_cols:
+            r.pop(c, None)
 
     with open(MERGED_PATH, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(rows)
 
-    print(f"\n→ merged.csv에 4개 Impact 버전 컬럼 추가 완료")
+    print(f"\n→ merged.csv에 등급별 건수 컬럼 추가 (자율회수·공백 제외)")
 
 
 if __name__ == "__main__":
