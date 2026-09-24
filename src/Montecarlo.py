@@ -76,7 +76,7 @@ def spearman(x, y):
     return np.corrcoef(rx, ry)[0, 1]
 
 
-def run_smaa(R, S, V, I, C, n_cat, use_gap=True, seed=SEED):
+def run_smaa(R, S, V, C, n_cat, use_gap=True, seed=SEED):
     """SMAA 시뮬레이션. use_gap=False면 적용공백 제외(3변수)"""
     rng = np.random.default_rng(seed)
     n_var = 4 if use_gap else 3
